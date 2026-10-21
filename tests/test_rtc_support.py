@@ -15,7 +15,9 @@ class FakeClient:
 
 
 def _policy():
-    cfg = VlaCppConfig(device="cpu", chunk_size=4, n_action_steps=4)
+    # prefetch_threshold=0 keeps the latency budget satisfied for this tiny
+    # chunk; RTC support does not depend on the loop tuning.
+    cfg = VlaCppConfig(device="cpu", chunk_size=4, n_action_steps=4, prefetch_threshold=0)
     return VlaCppPolicy(cfg, client=FakeClient())
 
 

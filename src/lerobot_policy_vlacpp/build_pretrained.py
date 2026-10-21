@@ -2,6 +2,16 @@
 
 Writes config.json (the VlaCppConfig), model.safetensors (the weightless policy),
 and the passthrough processor JSONs so `lerobot-rollout --policy.path=<dir>` works.
+
+Every default below mirrors the corresponding `VlaCppConfig` field default, and
+`tests/test_build_pretrained.py::test_cli_defaults_match_config_defaults` asserts
+it stays that way. That test exists because they DID diverge: the CLI defaulted
+to `image_size=512` while the model (smolvla-ducks-v4) and the config are
+natively 256, so a bare `vlacpp-build-pretrained` silently wrote a pretrained dir
+that the server rejects - only visible on a real run. The loop defaults
+(`prefetch_threshold` 12, `blend_horizon` 5, `max_action_delta` 10) come along
+with them, so rebuilding the dir can no longer reset the tuned control loop to
+some other value (see configuration_vlacpp for the latency arithmetic).
 """
 
 from __future__ import annotations
@@ -24,11 +34,11 @@ def build_pretrained_dir(
     *,
     server_address: str = "tcp://localhost:5555",
     tokenizer_name: str = "HuggingFaceTB/SmolVLM2-500M-Instruct",
-    image_size: int = 512,
+    image_size: int = 256,
     max_state_dim: int = 32,
     tokenizer_max_length: int = 48,
     chunk_size: int = 50,
-    n_action_steps: int = 50,
+    n_action_steps: int = 25,
     real_action_dim: int = 6,
     image_keys: list[str] | None = None,
     device: str = "cpu",
@@ -60,18 +70,41 @@ def build_pretrained_dir(
     return out
 
 
-def main() -> None:
+def build_parser() -> argparse.ArgumentParser:
+    """The `vlacpp-build-pretrained` CLI.
+
+    Every default here mirrors the matching `VlaCppConfig` field default;
+    `test_cli_defaults_match_config_defaults` enforces that, so the CLI can no
+    longer write a pretrained dir the config itself would reject.
+    """
     p = argparse.ArgumentParser(description="Build a vlacpp pretrained dir for lerobot-rollout")
     p.add_argument("out_dir")
     p.add_argument("--server-address", default="tcp://localhost:5555")
     p.add_argument("--tokenizer-name", default="HuggingFaceTB/SmolVLM2-500M-Instruct")
-    p.add_argument("--image-size", type=int, default=512)
+    p.add_argument(
+        "--image-size",
+        type=int,
+        default=256,
+        help="must match the GGUF's smolvla.image_size (256 for smolvla-ducks-v4); "
+        "the old default of 512 produced a dir the server rejects",
+    )
     p.add_argument("--max-state-dim", type=int, default=32)
     p.add_argument("--tokenizer-max-length", type=int, default=48)
     p.add_argument("--chunk-size", type=int, default=50)
-    p.add_argument("--n-action-steps", type=int, default=50)
+    p.add_argument(
+        "--n-action-steps",
+        type=int,
+        default=25,
+        help="rows served per fetched chunk; must satisfy "
+        "prefetch_threshold + n_action_steps <= chunk_size (validated on load)",
+    )
     p.add_argument("--real-action-dim", type=int, default=6)
     p.add_argument("--image-keys", nargs="+", default=["observation.images.front"])
+    return p
+
+
+def main() -> None:
+    p = build_parser()
     args = p.parse_args()
 
     out = build_pretrained_dir(

@@ -13,7 +13,8 @@ def test_end_to_end_select_action(tmp_path, mock_server):
         server_address=mock_server.addr,
         image_keys=["observation.images.front"],
         chunk_size=mock_server.chunk_size,
-        n_action_steps=mock_server.chunk_size,
+        # must satisfy prefetch_threshold + n_action_steps <= chunk_size
+        n_action_steps=25,
     )
     cfg = PreTrainedConfig.from_pretrained(str(out))
     cfg.pretrained_path = out
